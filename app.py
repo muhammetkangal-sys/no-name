@@ -3,7 +3,7 @@ import numpy as np
 import streamlit as st
 from PIL import Image
 
-from config import DEFAULT_DEFECT_TYPES, SIMILARITY_THRESHOLD
+from config import CUSTOM_MODEL_PATH, DEFAULT_DEFECT_TYPES, SIMILARITY_THRESHOLD
 from utils.database import (
     get_all_defects,
     get_defect_types,
@@ -12,8 +12,9 @@ from utils.database import (
     init_db,
     save_defect,
 )
+from utils.export_dataset import export_dataset, get_dataset_status
 from utils.similarity import extract_embedding, find_similar_defects
-from utils.yolo import run_yolo_detection
+from utils.yolo import reload_model, run_yolo_classification
 
 # Set page config
 st.set_page_config(
@@ -93,8 +94,10 @@ if "analysis_done" not in st.session_state:
     st.session_state.analysis_done = False
 if "annotated_image" not in st.session_state:
     st.session_state.annotated_image = None
-if "num_det" not in st.session_state:
-    st.session_state.num_det = 0
+if "yolo_pred_class" not in st.session_state:
+    st.session_state.yolo_pred_class = None
+if "yolo_pred_score" not in st.session_state:
+    st.session_state.yolo_pred_score = 0.0
 if "best_match" not in st.session_state:
     st.session_state.best_match = None
 if "image_embedding" not in st.session_state:
@@ -113,8 +116,14 @@ def reset_state():
 st.title("🤖 AI CNC Inspector")
 st.markdown("Akıllı kalite kontrol sistemi. Parçayı çekin, analiz edelim.")
 
+# Aktif model bilgisi
+_model_label = "🟢 Özel Model (best.pt)" if CUSTOM_MODEL_PATH.exists() else "🟡 Temel Model (Henüz eğitilmedi)"
+st.caption(f"Aktif Model: {_model_label}")
+
 # Navigation Tabs
-tab_detect, tab_reports = st.tabs(["🔍 Hata Tespiti", "📊 Raporlar & Geçmiş"])
+tab_detect, tab_reports, tab_admin = st.tabs(
+    ["🔍 Hata Tespiti", "📊 Raporlar & Geçmiş", "🧠 Model Eğitimi"]
+)
 
 with tab_detect:
     if not st.session_state.analysis_done:
@@ -156,17 +165,19 @@ with tab_detect:
             with st.spinner(
                 "🧠 Yapay zeka fotoğrafı inceliyor... Lütfen bekleyin."
             ):
-                # Run YOLO
+                # Run YOLO Classification
                 try:
-                    annotated_img, num_det, classes = run_yolo_detection(
+                    orig_img, top_class, top_score = run_yolo_classification(
                         image_obj
                     )
-                    st.session_state.annotated_image = annotated_img
-                    st.session_state.num_det = num_det
+                    st.session_state.annotated_image = orig_img
+                    st.session_state.yolo_pred_class = top_class
+                    st.session_state.yolo_pred_score = top_score
                 except Exception as e:
                     st.error(f"YOLO hatası: {e}")
                     st.session_state.annotated_image = image_obj
-                    st.session_state.num_det = 0
+                    st.session_state.yolo_pred_class = None
+                    st.session_state.yolo_pred_score = 0.0
 
                 # Run Similarity
                 embedding = extract_embedding(image_obj)
@@ -199,7 +210,7 @@ with tab_detect:
         with col_img:
             st.image(
                 st.session_state.annotated_image,
-                caption=f"Tespit Edilen Bölge ({st.session_state.num_det} nesne)",
+                caption="Analiz Edilen Fotoğraf",
                 use_container_width=True,
             )
 
@@ -215,6 +226,9 @@ with tab_detect:
                     width=200,
                     caption="Geçmişteki Benzer Hata",
                 )
+                
+                if st.session_state.yolo_pred_class and st.session_state.yolo_pred_class != "Bilinmiyor":
+                    st.markdown(f"**YOLO Model Tahmini:** `{st.session_state.yolo_pred_class}` (%{st.session_state.yolo_pred_score*100:.1f} güven)")
                 st.markdown(
                     f"**Önerilen Hata Tipi:** `{match['defect_type']}`"
                 )
@@ -343,3 +357,94 @@ with tab_reports:
                 with col_inf:
                     st.write(f"**Tarih:** {item['created_at']}")
                     st.write(f"**Not:** {item['notes'] or '-'}")
+
+with tab_admin:
+    st.header("🧠 Model Eğitimi & Veri Yönetimi")
+
+    # --- Veri Durumu ---
+    st.subheader("📊 Veri Durumu")
+    ds_status = get_dataset_status()
+
+    col_m1, col_m2, col_m3 = st.columns(3)
+    col_m1.metric("Toplam Görsel", ds_status["total_images"])
+    col_m2.metric("Eğitilmemiş Yeni Görsel", ds_status["untrained_images"])
+    col_m3.metric("Sınıf Sayısı", len(ds_status["class_counts"]))
+
+    if ds_status["class_counts"]:
+        st.markdown("**Sınıf Dağılımı:**")
+        for cls_name, count in sorted(
+            ds_status["class_counts"].items(), key=lambda x: -x[1]
+        ):
+            min_ok = "✅" if count >= ds_status["min_per_class"] else "⚠️"
+            st.write(f"{min_ok} `{cls_name}`: {count} görsel")
+
+    if ds_status["ready_for_training"]:
+        st.success(
+            f"✅ Eğitim için yeterli veri var! "
+            f"({ds_status['total_images']} görsel, {len(ds_status['class_counts'])} sınıf)"
+        )
+    else:
+        st.warning(
+            f"⚠️ Eğitim için en az {ds_status['min_required']} toplam görsel "
+            f"ve her sınıfta en az {ds_status['min_per_class']} görsel gerekiyor."
+        )
+
+    # --- Model Durumu ---
+    st.markdown("---")
+    st.subheader("🤖 Model Durumu")
+
+    if CUSTOM_MODEL_PATH.exists():
+        import os
+        from datetime import datetime
+
+        mod_time = os.path.getmtime(CUSTOM_MODEL_PATH)
+        mod_date = datetime.fromtimestamp(mod_time).strftime("%Y-%m-%d %H:%M")
+        st.info(f"🟢 Özel eğitilmiş model mevcut. Son güncelleme: **{mod_date}**")
+    else:
+        st.warning(
+            "🟡 Henüz özel bir model eğitilmedi. "
+            "Sistem şu an temel (pre-trained) model kullanıyor."
+        )
+
+    # --- Aksiyonlar ---
+    st.markdown("---")
+    st.subheader("⚡ Aksiyonlar")
+
+    col_act1, col_act2 = st.columns(2)
+
+    with col_act1:
+        if st.button(
+            "📦 Veri Setini Dışa Aktar",
+            use_container_width=True,
+            help="Veritabanındaki görselleri YOLO eğitim formatına dönüştürür.",
+        ):
+            with st.spinner("Veri seti oluşturuluyor..."):
+                result = export_dataset(force=True)
+            if result["success"]:
+                st.success(result["message"])
+            else:
+                st.error(result["message"])
+
+    with col_act2:
+        train_disabled = not ds_status["ready_for_training"]
+        if st.button(
+            "🚀 Modeli Eğit",
+            type="primary",
+            use_container_width=True,
+            disabled=train_disabled,
+            help="Yeterli veri varsa modeli yeniden eğitir."
+            if not train_disabled
+            else "Eğitim için yeterli veri yok.",
+        ):
+            with st.spinner(
+                "🧠 Model eğitiliyor... Bu işlem birkaç dakika sürebilir."
+            ):
+                from train_model import train
+
+                result = train(force_export=True)
+            if result["success"]:
+                reload_model()
+                st.success(result["message"])
+                st.balloons()
+            else:
+                st.error(f"[{result['stage']}] {result['message']}")

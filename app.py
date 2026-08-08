@@ -13,6 +13,7 @@ from utils.database import (
     save_defect,
 )
 from utils.export_dataset import export_dataset, get_dataset_status
+from utils.image_processing import preprocess_image
 from utils.similarity import extract_embedding, find_similar_defects
 from utils.yolo import reload_model, run_yolo_classification
 
@@ -102,6 +103,8 @@ if "best_match" not in st.session_state:
     st.session_state.best_match = None
 if "image_embedding" not in st.session_state:
     st.session_state.image_embedding = None
+if "camera_active" not in st.session_state:
+    st.session_state.camera_active = False
 
 
 def reset_state():
@@ -110,6 +113,7 @@ def reset_state():
     st.session_state.annotated_image = None
     st.session_state.best_match = None
     st.session_state.image_embedding = None
+    st.session_state.camera_active = False
 
 
 # --- MAIN UI ---
@@ -128,29 +132,38 @@ tab_detect, tab_reports, tab_admin = st.tabs(
 with tab_detect:
     if not st.session_state.analysis_done:
         # STEP 1: IMAGE CAPTURE
-        st.markdown("### 1. Fotoğraf Çek veya Yükle")
+        st.markdown("### 1. Parçayı İncele")
 
-        col_cam, col_upload = st.columns(2)
+        selected_image = None
 
-        with col_cam:
+        if not st.session_state.camera_active:
+            # Ana Ekran: Kamerayı Aç Butonu ve Dosya Yükleyici
+            st.markdown("<br>", unsafe_allow_html=True)
+            if st.button("📸 Kamerayı Aç (Fotoğraf Çek)", use_container_width=True, type="primary"):
+                st.session_state.camera_active = True
+                st.rerun()
+
             st.markdown(
-                "<div class='camera-text'>📸 Kameradan Çek</div>",
+                "<div style='text-align: center; margin: 2rem 0; color: #666; font-weight: 600;'>— VEYA —</div>",
                 unsafe_allow_html=True,
             )
-            cam_image = st.camera_input("Kamera", label_visibility="hidden")
 
-        with col_upload:
-            st.markdown(
-                "<div class='camera-text'>📁 Dosya Yükle</div>",
-                unsafe_allow_html=True,
-            )
-            file_image = st.file_uploader(
-                "Dosya",
+            selected_image = st.file_uploader(
+                "📁 Galeriden veya Cihazdan Yükle",
                 type=["jpg", "jpeg", "png", "webp"],
-                label_visibility="hidden",
             )
-
-        selected_image = cam_image or file_image
+        else:
+            # Kamera Modu: Tam Ekran Kamera
+            st.markdown("#### 📸 Kameradan Çekim Yapılıyor...")
+            cam_image = st.camera_input("Kamera", label_visibility="hidden")
+            
+            if st.button("❌ Vazgeç / Geri Dön", use_container_width=True):
+                st.session_state.camera_active = False
+                st.rerun()
+                
+            if cam_image:
+                selected_image = cam_image
+                st.session_state.camera_active = False
 
         if selected_image:
             image_obj = Image.open(selected_image)

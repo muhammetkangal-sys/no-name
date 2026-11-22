@@ -5,7 +5,7 @@ import numpy as np
 from PIL import Image
 from ultralytics import YOLO
 
-from config import CUSTOM_MODEL_PATH, DEFAULT_YOLO_MODEL, MODELS_DIR
+from config import CUSTOM_MODEL_PATH, DEFAULT_YOLO_MODEL, LABEL_DISPLAY_MAP, MODELS_DIR
 
 _model = None
 
@@ -65,7 +65,8 @@ def run_yolo_classification(image_source) -> tuple[Image.Image, str, float]:
     if hasattr(results[0], 'probs') and results[0].probs is not None:
         top1_idx = int(results[0].probs.top1)
         top1_score = float(results[0].probs.top1conf)
-        top_class_name = model.names[top1_idx]
+        raw_class_name = model.names[top1_idx]
+        top_class_name = LABEL_DISPLAY_MAP.get(raw_class_name, raw_class_name)
     else:
         # Fallback if model is not classification or something fails
         top_class_name = "Bilinmiyor"

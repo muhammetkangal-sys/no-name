@@ -15,6 +15,7 @@ import shutil
 from datetime import datetime
 from pathlib import Path
 
+import torch
 from ultralytics import YOLO
 
 from config import (
@@ -120,12 +121,17 @@ def train(
 
     MODELS_DIR.mkdir(parents=True, exist_ok=True)
 
+    device = "mps" if torch.backends.mps.is_available() else ("cuda" if torch.cuda.is_available() else "cpu")
+    batch = 32 if device in ("mps", "cuda") else 16
+    print(f"Eğitim cihazı: {device.upper()}, Batch boyutu: {batch}")
+
     try:
         results = model.train(
             data=str(DATASET_DIR),
             epochs=epochs,
             imgsz=TRAINING_IMG_SIZE,
-            batch=-1,  # AutoBatch — GPU/CPU'ya göre otomatik batch boyutu
+            batch=batch,
+            device=device,
             patience=10,  # 10 epoch iyileşme olmazsa erken durdur
             project=str(MODELS_DIR / "runs"),
             name="cls_training",

@@ -43,6 +43,12 @@ def init_db():
             );
             """
         )
+        cols = [
+            row[1]
+            for row in conn.execute("PRAGMA table_info(defects)").fetchall()
+        ]
+        if "trained_at" not in cols:
+            conn.execute("ALTER TABLE defects ADD COLUMN trained_at TEXT")
         for defect_type in DEFAULT_DEFECT_TYPES:
             conn.execute(
                 "INSERT OR IGNORE INTO defect_types (name) VALUES (?)",

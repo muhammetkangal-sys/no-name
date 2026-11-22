@@ -10,8 +10,12 @@ CUSTOM_MODEL_PATH = MODELS_DIR / "best.pt"  # Eğitim sonrası üretilen özel m
 DATASET_DIR = DATA_DIR / "dataset"  # Eğitim için dışa aktarılan veri seti
 
 DEFAULT_DEFECT_TYPES = [
-    "Yüzey çizigi",
-    "Çatlak",
+    "Kılcal Çatlak",
+    "Yüzey Çiziği",
+    "İnklüzyon",
+    "Yama",
+    "Çukurlaşma",
+    "Hadde Tufalı",
     "Burr (talaş)",
     "Eksik delik",
     "Yanlış ölçü",
@@ -19,6 +23,21 @@ DEFAULT_DEFECT_TYPES = [
     "Kırık/kertik",
     "Diğer",
 ]
+
+LABEL_DISPLAY_MAP = {
+    "kilcal_catlak": "Kılcal Çatlak",
+    "yuzey_cizigi": "Yüzey Çiziği",
+    "inkluzyon": "İnklüzyon",
+    "yama": "Yama",
+    "cukurlasma": "Çukurlaşma",
+    "hadde_tufali": "Hadde Tufalı",
+    "crazing": "Kılcal Çatlak",
+    "scratches": "Yüzey Çiziği",
+    "inclusion": "İnklüzyon",
+    "patches": "Yama",
+    "pitted_surface": "Çukurlaşma",
+    "rolled-in_scale": "Hadde Tufalı",
+}
 
 SIMILARITY_THRESHOLD = 0.75
 

@@ -9,6 +9,7 @@ venv_new/
 # Veri ve model dosyaları
 data/defects/*
 !data/defects/.gitkeep
+data/dataset/
 data/*.db
 models/
 *.zip

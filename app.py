@@ -282,10 +282,17 @@ with tab_detect:
                 st.warning(
                     "⚠️ Daha önce benzer bir hata görülmedi veya sistem emin olamadı."
                 )
-                st.markdown("Lütfen bu hatayı manuel olarak etiketleyin:")
+                if st.session_state.yolo_pred_class and st.session_state.yolo_pred_class != "Bilinmiyor":
+                    st.info(
+                        f"🤖 **YOLO Model Önerisi:** `{st.session_state.yolo_pred_class}` (%{st.session_state.yolo_pred_score*100:.1f} güven)"
+                    )
+                st.markdown("Lütfen bu hatayı etiketleyin:")
 
                 defect_types = get_defect_types() or DEFAULT_DEFECT_TYPES
-                defect_type = st.selectbox("Hata tipi seçin:", defect_types)
+                default_idx = 0
+                if st.session_state.yolo_pred_class in defect_types:
+                    default_idx = defect_types.index(st.session_state.yolo_pred_class)
+                defect_type = st.selectbox("Hata tipi seçin:", defect_types, index=default_idx)
                 custom_type = st.text_input("Veya yeni bir hata tipi yazın:")
                 notes = st.text_area(
                     "Ek Not (Opsiyonel):",
